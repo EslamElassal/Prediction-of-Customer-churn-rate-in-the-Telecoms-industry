@@ -1,0 +1,798 @@
+---
+title: "Assignment2"
+output: html_notebook
+---
+---
+Customer churn rate is an important performance metric in the Telecoms industry due to the highly competitive markets. The churn rate enables companies to understand why their customers are leaving. You are hereby provided with the churn dataset containing randomly collected data from a telecom company’s database. Develop ML models that can help the retention team predict high risk churn customers before they leave.
+---
+```{r}
+# clean Memory
+rm(list = ls(all.names = TRUE)); gc();
+```
+
+
+```{r}
+# install libraries
+#install.packages("devtools")
+#The easiest way to get ggplot2 is to install the whole tidyverse:
+install.packages("tidyverse")
+install.packages("ggplot2")
+install.packages("MASS") 
+#install.packages("reshape") 
+install.packages("plyr")
+#*Correlation Plot
+#*more on correlation plots from: https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html
+install.packages("reshape2") 
+install.packages("corrplot")
+install.packages('caTools')
+install.packages("rpart.plot")
+install.packages("caret")
+install.packages("keras")
+install.packages("tensorflow")
+install.packages("arules")
+```
+
+```{r}
+# import libraries
+library(ggplot2)
+library(MASS)
+#library(reshape)
+library(reshape2)
+library(scales)
+library(plyr)
+library(corrplot)
+# import libraries (classification and regression)
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(caret)
+#
+library(dplyr)
+library(tidyverse)
+library(pROC)
+
+#install_keras(method="virtualenv", envname="myenv", pip_options = "--no-cache-dir")
+#install_tensorflow(method="virtualenv", envname="myenv", pip_options = "--no-cache-dir")
+```
+
+# 1. Generate a scatterplot matrix to show the relationships between the variables and a heatmap to determine correlated attributes (10 points)
+
+```{r}
+# read dataSet 'Churn Dataset.csv'
+ChurnDSet <- read.csv('E:/المبادرة_الرقمية/uOttawa/Fundamentals-Applied Data Sci/AssG/Assignment 2/Assignment2/Churn Dataset.csv')
+show(ChurnDSet)
+```
+
+
+```{r}
+# A scatterplot matrix to show the relationships between the variables
+pairs(ChurnDSet[, sapply(ChurnDSet, is.numeric)], pch = 19)
+```
+
+
+```{r}
+install.packages("psych")
+library(psych)
+pairs.panels(ChurnDSet[, sapply(ChurnDSet, is.numeric)], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+
+
+
+
+
+
+```{r}
+cor(ChurnDSet[, sapply(ChurnDSet, is.numeric)],
+             method = "pearson")
+```
+
+
+```{r}
+#Heat Map
+#use the built-in R dataset mtcars
+
+#load reshape2 package to use melt() function
+library(reshape2)
+
+#melt mtcars into long format
+melt_ChurnDSet<- melt(cor(ChurnDSet[, sapply(ChurnDSet, is.numeric)],
+             method = "pearson"))
+
+head(melt_ChurnDSet)
+#use rescale to enhance color variation of variables
+
+#load libraries
+library(plyr)
+library(scales)
+
+
+#create heatmap using rescaled values
+ggplot(melt_ChurnDSet, aes(Var1, Var2)) +
+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_gradient(low = "white", high = "red")
+```
+
+
+
+
+# 2. Ensure data is in the correct format for downstream processes (e.g., remove redundant information, convert categorical to numerical values, address missing values, etc.) (10 points)
+
+```{r}
+#summary(ChurnDSet)
+names(ChurnDSet)
+#class(ChurnDSet$customerID)
+```
+```{r}
+# 1. remove "customerID" from ChurnDSet
+ChurnDSet <- subset (ChurnDSet, select = -customerID)
+```
+
+
+
+
+```{r}
+# 2. Display All categorical features with its values:
+catChurnDSet = ChurnDSet[, sapply(ChurnDSet, is.character)]
+listcolumns = colnames(catChurnDSet)
+for(i in 1:length(catChurnDSet)){
+  value = paste(unique(catChurnDSet[,i]), collapse = ", ")
+  cat(listcolumns[i],":\n",value,"\n\n")
+}
+
+```
+
+
+```{r}
+dummy <- dummyVars(" ~ .", data=catChurnDSet)
+#3. perform one-hot encoding on All categorical features:
+dummy_catChurnDSet <- data.frame(predict(dummy, newdata=catChurnDSet))
+
+#view final data frame
+dummy_catChurnDSet
+```
+
+
+```{r}
+# 4. Remove All useless features:
+ removecatChurnDSet = subset (dummy_catChurnDSet, select = 
+                                 c(-genderFemale, -PartnerNo, -DependentsNo,
+                                   -PhoneServiceNo, -PaperlessBillingNo, -ChurnNo))
+names(removecatChurnDSet)
+```
+
+```{r}
+#rbind
+NumericChurnDSet = ChurnDSet[, sapply(ChurnDSet, is.numeric)]
+#final_catChurnDSet = {}
+## merge two data frames
+final_catChurnDSet = cbind(NumericChurnDSet,removecatChurnDSet)
+names(final_catChurnDSet)
+```
+
+
+```{r}
+# 5. Remove the duplicated rows:
+#modifiedChurnDSet = data.frame(out)
+modifiedChurnDSet = final_catChurnDSet 
+cat("The dimensional number of modifiedChurnDSet:\n", dim(modifiedChurnDSet),"\n")
+
+cat("The number of duplicated rows before removing:\n", sum(duplicated(modifiedChurnDSet)| duplicated(modifiedChurnDSet, fromLast = TRUE)),"\n")
+modifiedChurnDSet = unique(modifiedChurnDSet)
+cat("The number of duplicated rows After removing:\n",sum(duplicated(modifiedChurnDSet)| duplicated(modifiedChurnDSet, fromLast = TRUE)),"\n")
+#modifiedChurnDSet = unique(modifiedChurnDSet)
+cat("The dimensional number of modifiedChurnDSet:\n", dim(modifiedChurnDSet),"\n")
+```
+```{r}
+#sum(is.na(modifiedChurnDSet$TotalCharges))
+#remove the missings
+#modifiedChurnDSet = na.omit(modifiedChurnDSet)
+cat("The number of null values in each feature:\n")
+colSums(is.na(modifiedChurnDSet))
+```
+
+```{r}
+
+# 6. put all null values of categorical features by its mean :
+
+for(i in 1:ncol(modifiedChurnDSet)){
+  modifiedChurnDSet[is.na(modifiedChurnDSet[,i]), i] <- 
+    mean(modifiedChurnDSet[,i], na.rm = TRUE)
+}
+```
+
+```{r}
+cat("The dimensional number of modifiedChurnDSet: \n",dim(modifiedChurnDSet),"\n\n")
+cat("the number of null values in each feature After removing null values:\n")
+colSums(is.na(modifiedChurnDSet))
+```
+
+
+
+
+
+# 3.Split the dataset into 80 training/20 test set and fit a decision tree to the training data. Plot the tree, and interpret the results. (10 points)
+
+
+```{r}
+# Split the modifiedChurnDSet into 80 training/20 test set
+set.seed(42)
+sample_split <- sample.split(Y = modifiedChurnDSet$ChurnYes, SplitRatio = 0.80)
+train_set <- subset(x = modifiedChurnDSet, sample_split == TRUE)
+test_set <- subset(x = modifiedChurnDSet, sample_split == FALSE)
+```
+
+
+```{r}
+cat("The dimensional number of train_set: \n",dim(train_set),"\n\n")
+cat("The dimensional number of test_set: \n",dim(test_set),"\n\n")
+colSums(is.na(train_set))
+```
+
+
+
+```{r}
+# fit a decision tree to the training data.
+#specify method as class since we are dealing with classification
+modelDT <- rpart(ChurnYes ~ ., data = train_set, method = "class")
+```
+
+
+```{r}
+
+#Plot the tree after fit a decision tree:
+
+#rpart.plot(modelDT)
+prp(modelDT, box.palette = "Reds", tweak = 1.2) 
+```
+
+
+
+
+
+
+```{r}
+#interpret the results.
+#Make predictions
+#use the predict() function and pass in the testing subset
+predsDTBase <- predict(modelDT, newdata = test_set, type = "class")
+#head(predsDTBase)
+
+#Print the confusion Matrix after fitting model decision tree:
+
+confusionMatrix(as.factor(test_set$ChurnYes), predsDTBase)
+```
+
+
+
+
+# 4. Try different ways to improve the decision tree algorithm (e.g., use different splitting strategies, prune tree after splitting). Does pruning the tree improves the accuracy? (10 points)
+
+
+
+#Step 1: Model Building
+
+
+```{r}
+#generates a reproducible random sampling
+set.seed(42) 
+#specify the cross-validation method
+ctrl <- trainControl(method = "cv", number = 10)
+#fit a decision tree model and use k-fold CV to evaluate performance
+dtree_fit_gini <- train(as.factor(ChurnYes)~., data = train_set, method = "rpart", parms = list(split = "gini"), trControl = ctrl, tuneLength = 10)
+```
+
+#Step 2: Evaluate - view summary of k-fold CV
+
+```{r}
+#metrics give us an idea of how well the model performed on previously unseen data
+print(dtree_fit_gini)
+
+```
+
+#Step 3:Plot the tree after fit a decision tree that used gini:
+
+```{r}
+#view final model
+dtree_fit_gini$finalModel
+#view the tree using prop() function
+prp(dtree_fit_gini$finalModel, box.palette = "Reds", tweak = 1.2) 
+```
+
+
+```{r}
+#view predictions for each fold
+dtree_fit_gini$resample
+
+#Check accuracy
+test_pred_information <- predict(dtree_fit_gini, newdata = test_set)
+
+#Print the confusion Matrix after using Gini and cross validation:
+
+confusionMatrix(as.factor(test_set$ChurnYes), test_pred_information) 
+```
+#prune tree after splitting
+
+```{r}
+
+# Extract the best value for cp to improve prune tree from this graph:
+
+#Gini Model
+hr_Gini_model <- rpart(ChurnYes ~ ., data = train_set, method = "class",parms =
+                         list(split = "gini"),control = rpart.control(cp = 0))
+summary(hr_Gini_model)
+#Plot Decision Tree
+plot(hr_Gini_model)
+# Examine the complexity plot
+printcp(hr_Gini_model)
+# Analysis Table for CP and xerror:
+plotcp(hr_Gini_model)
+```
+
+
+```{r}
+
+# The best value for cp is 0.00403769 to get the best accuracy 
+# because it has the lowest value for xerror (0.75437):
+
+hr_model_preprun = prune(dtree_fit_gini$finalModel, cp = 0.00403769)
+
+```
+
+
+
+```{r}
+#Plot the tree after pruning decision Tree Splitting Method (gini):   
+
+#rpart.plot(modelDT)
+#view the tree using prop() function
+prp(hr_model_preprun, box.palette = "Reds", tweak = 1.2) 
+```
+
+```{r}
+#interpret the results.
+#Make predictions
+#use the predict() function and pass in the testing subset
+predsDT_preprun <- predict(hr_model_preprun, newdata = test_set, type = "class")
+
+#Print the confusion Matrix for prune
+
+confusionMatrix(as.factor(test_set$ChurnYes), predsDT_preprun)
+```
+
+
+
+
+
+
+#5. Classify the data using the XGBoost model with nrounds = 70 and max depth = 3. Evaluate the performance. Is there any sign of overfitting? (10 points)
+
+```{r}
+install.packages('xgboost')     # for fitting the xgboost model
+install.packages('caret')       # for general data preparation and model fitting
+install.packages('e1071')
+
+library(xgboost)
+library(caret)  
+library(e1071)                      
+
+```
+
+
+
+```{r}
+# split train_set and test_set into 
+# independent variables for train
+X_train <- data.matrix(subset (train_set, select = -ChurnYes))
+# dependent variables for train
+y_train <- data.matrix(subset (train_set, select = ChurnYes))
+# independent variables for test
+X_test <- data.matrix(subset (test_set, select = -ChurnYes))
+# dependent variables for test
+y_test <- data.matrix(subset (test_set, select = ChurnYes))
+```
+
+
+
+
+
+```{r}
+# convert the train and test data into xgboost matrix type.
+xgboost_train = xgb.DMatrix(data = X_train, label= y_train)
+xgboost_test = xgb.DMatrix(data=X_test, label=y_test)
+```
+
+
+
+```{r}
+# the result after training  a model using the training data:
+
+model_XGBoost <- xgboost(data = xgboost_train, 
+                 max.depth=3,
+                 # max number of boosting iterations
+                 nrounds=70)
+```
+
+
+```{r}
+#use model to make predictions on test data
+pred_testXGBoost = predict(model_XGBoost, xgboost_test)
+head(pred_testXGBoost)
+```
+
+```{r}
+cat("the lowest value in pred_testXGBoost:",min(pred_testXGBoost),"\n")
+cat("the highest value in pred_testXGBoost:",max(pred_testXGBoost),"\n")
+```
+```{r}
+# get & print the classification error
+err <- mean(pred_testXGBoost)
+print(paste("test-error=", err))
+```
+
+```{r}
+pred_testXGBoost = as.numeric(pred_testXGBoost > err)
+#y_test = as.numeric(y_test)
+#head(pred_testXGBoost,20)
+#head(y_test,20)
+```
+
+
+```{r}
+# print Confusion Matrix for the XGBoost model
+
+conf_mat = confusionMatrix(as.factor(y_test), as.factor(pred_testXGBoost))
+print(conf_mat)
+```
+
+
+
+
+#6. Train a deep neural network using Keras with 3 dense layers. Try changing the activation function or dropout rate. What effects does any of these have on the result? (10 points)
+
+
+
+
+```{r}
+# split train_set and test_set into 
+# independent variables for train
+X_train <- data.matrix(subset (train_set, select = -ChurnYes))
+# dependent variables for train
+y_train <- data.matrix(subset (train_set, select = ChurnYes))
+# independent variables for test
+X_test <- data.matrix(subset (test_set, select = -ChurnYes))
+# dependent variables for test
+y_test <- data.matrix(subset (test_set, select = ChurnYes))
+
+dim(X_train)
+dim(y_train)
+dim(X_test)
+dim(y_test)
+
+```
+
+```{r}
+library(keras)
+library(tensorflow)
+tensorflow::set_random_seed(42)
+#converting the target variable to once hot encoded vectors using keras inbuilt function
+y_train = to_categorical(y_train,2)
+y_test = to_categorical(y_test,2)
+
+```
+
+
+
+```{r}
+
+#defining a keras sequential model by activation function (relu)
+
+model <- keras_model_sequential() 
+model %>% 
+  layer_dense(units = 256, activation = 'relu', input_shape = ncol(X_train)) %>% 
+  layer_dense(units = 128, activation = 'relu') %>%
+  layer_dense(units = ncol(y_train), activation = 'softmax')
+#compiling the defined model with metric = accuracy and optimiser as adam.
+model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = 'adam',
+  metrics = c('accuracy')
+)
+N_epochs = 75
+
+#The result after fitting the model on the training dataset by 75 epochs.
+
+history = model %>% fit(X_train, y_train, epochs = N_epochs, batch_size = 128)
+plot(history)
+```
+
+
+```{r}
+
+#Evaluating model on the cross validation dataset
+
+loss_and_metrics <- model %>% evaluate(X_test, y_test, batch_size = 128)
+
+```
+
+#changing the activation function from (relu) into (tanh)
+
+```{r}
+library(keras)
+library(tensorflow)
+#defining a keras sequential model
+model_tanh <- keras_model_sequential() 
+model_tanh %>% 
+  layer_dense(units = 256, activation = 'tanh', input_shape = ncol(X_train)) %>% 
+  layer_dense(units = 128, activation = 'tanh') %>%
+  layer_dense(units = ncol(y_train), activation = 'softmax')
+#compiling the defined model with metric = accuracy and optimiser as adam.
+model_tanh %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = 'adam',
+  metrics = c('accuracy')
+)
+N_epochs = 75
+#The result after fitting the model on the training dataset by 75 epochs.
+
+history_tanh = model_tanh %>% fit(X_train, y_train, epochs = N_epochs, batch_size = 128)
+plot(history_tanh)
+```
+
+
+```{r}
+#Evaluating model on the cross validation dataset after using activation = 'tanh':
+
+loss_and_metrics_tanh <- model_tanh %>% evaluate(X_test, y_test, batch_size = 128)
+```
+
+
+#7. Compare the performance of the models in terms of the following criteria: precision, recall, accuracy, F-measure. Identify the model that performed best and worst according to each criterion. (10 points)
+
+```{r}
+install.packages("ROCR")
+library (ROCR)
+```
+
+
+```{r}
+# getting Performance of any model [precision, recall, accuracy, F-measure.]
+# getPreformance<- function(y_pred, y_test, title)
+# {
+#   cat("The Performance of",title,"\n")
+#   retrieved <- sum(y_pred)
+#   precision <- sum(y_pred & y_test) / retrieved
+#   cat("\tprecision: ", precision,"\n")
+#   recall <- sum(y_pred & y_test) / sum(y_test)
+#   cat("\tRecall: ", recall,"\n")
+#   accuracy = sum(y_test == y_pred)/length(y_test)
+#   cat("\tAccuracy: ", accuracy,"\n")
+#   Fmeasure <- 2 * precision * recall / (precision + recall)
+#   cat("\tF-measure: ", Fmeasure,"\n")
+# }
+```
+
+```{r}
+# split train_set and test_set into 
+# independent variables for train
+X_train <- data.matrix(subset (train_set, select = -ChurnYes))
+# dependent variables for train
+y_train <- data.matrix(subset (train_set, select = ChurnYes))
+# independent variables for test
+X_test <- data.matrix(subset (test_set, select = -ChurnYes))
+# dependent variables for test
+y_test <- data.matrix(subset (test_set, select = ChurnYes))
+
+dim(X_train)
+dim(y_train)
+dim(X_test)
+dim(y_test)
+
+```
+
+
+```{r}
+#the decision tree algorithm base
+
+#Print the confusion Matrix
+confusionMatrix(as.factor(test_set$ChurnYes), predsDTBase,mode="everything")
+```
+
+```{r}
+#the decision tree algorithm 
+#by splitting information and using cross vaildation
+
+#test_pred_information =  as.numeric(as.matrix(data.frame(test_pred_information)))
+#Print the confusion Matrix
+confusionMatrix(as.factor(test_set$ChurnYes), test_pred_information,mode="everything")
+```
+
+```{r}
+#prune tree  after splitting 
+
+#predsDT_preprun =  as.numeric(as.matrix(data.frame(predsDT_preprun)))
+
+confusionMatrix(as.factor(test_set$ChurnYes), predsDT_preprun,mode="everything")
+```
+
+
+```{r}
+
+#the XGBoost model
+
+#getPreformance(pred_testXGBoost,y_test,"the XGBoost model")
+confusionMatrix(as.factor(y_test), as.factor(pred_testXGBoost),mode="everything")
+```
+
+
+
+
+```{r}
+# getting prediction from A deep neural network using Keras
+pred <- model %>% predict(X_test)
+y_predDNN = round(pred)%>% k_argmax()
+y_predDNN = as.numeric(y_predDNN)
+
+#A deep neural network using 
+#Keras the activation function of (relu)
+
+confusionMatrix(as.factor(test_set$ChurnYes), as.factor(y_predDNN),mode="everything")
+```
+```{r}
+# getting prediction from A deep neural network using Keras
+predtanh <- model_tanh %>% predict(X_test)
+y_predDNNtanh = round(predtanh)%>% k_argmax()
+y_predDNNtanh = as.numeric(y_predDNNtanh)
+
+#A deep neural network using 
+#Keras the activation function of (tanh)
+
+confusionMatrix(as.factor(test_set$ChurnYes), as.factor(y_predDNNtanh),mode="everything")
+```
+
+
+#8. Use a ROC graph to compare the performance of the DT, XGboost & DNN techniques. (10 points)
+
+```{r}
+library(pROC)
+# Compute roc
+
+#The decision tree base algorithm
+
+res.roc <- roc(y_test, as.numeric(predsDTBase))
+plot.roc(res.roc, print.auc = TRUE, print.thres = "best")
+```
+
+
+```{r}
+#the decision tree algorithm by splitting information and using cross validation:
+
+
+res.roc <- roc(y_test, as.numeric(test_pred_information))
+plot.roc(res.roc, print.auc = TRUE, print.thres = "best")
+```
+
+```{r}
+#prune tree  after splitting 
+
+res.roc <- roc(y_test, as.numeric(predsDT_preprun))
+plot.roc(res.roc, print.auc = TRUE, print.thres = "best")
+```
+
+
+
+
+```{r}
+#the XGBoost model
+res.roc <- roc(y_test, as.numeric(pred_testXGBoost))
+plot.roc(res.roc, print.auc = TRUE, print.thres = "best")
+```
+
+```{r}
+# A deep neural network using Keras of activation function (relu)
+
+res.roc <- roc(y_test, y_predDNN)
+plot.roc(res.roc, print.auc = TRUE, print.thres = "best")
+```
+
+```{r}
+# A deep neural network using Keras of activation function (tanh)
+
+res.roc <- roc(y_test, y_predDNNtanh)
+plot.roc(res.roc, print.auc = TRUE, print.thres = "best")
+```
+
+
+#Part B
+#(20 points) A store is interested in determining the associations between items purchased from its Departments. The store chose to conduct a market basket analysis of specific items purchased to analyze customer’s buying behavior.
+
+#a) Generate a plot of the top 10 transactions (5 points)
+
+```{r}
+
+library(arules)
+datasetTransactions <- read.transactions("E:/المبادرة_الرقمية/uOttawa/Fundamentals-Applied Data Sci/AssG/Assignment 2/Assignment2/transactions.csv",
+                                         sep = ',', rm.duplicates = TRUE)
+itemFrequencyPlot(datasetTransactions, topN = 10)
+```
+
+#b) Generate association rules using minimum support of 0.002, minimum confidence of 0.20, and maximum length of 3. Display the rules, sorted by descending lift value (5 points).
+```{r}
+
+# set better support and confidence levels to learn more rules
+transactionsRules <- apriori(datasetTransactions, parameter = list(support = 0.002, confidence =0.20, maxlen = 3))
+
+#summary(transactionsRules)
+
+```
+
+```{r}
+# sorting by descending lift value
+top.left <- inspect(sort(transactionsRules, decreasing = TRUE, by = "lift"))   
+```
+
+
+#c) Select the rule from QII-b with the greatest lift. Compare this rule with the highest lift rule for maximum length of 2 (10 points).
+
+#i) Which rule has the better lift? Which rule has the greater support?
+
+```{r}
+# get the better lift or support of the rules for maximum length of 3:
+ruleLiftMax3 <- inspect(sort(transactionsRules, by = "lift",decreasing = TRUE)[0:1])
+ruleSupportMax3 <- inspect(sort(transactionsRules, by = "support",
+                                decreasing = TRUE)[0:1])                               
+```
+
+```{r}
+
+# get the better or lift support of the rules for maximum length of 2:
+transactionsRules_max2 <- apriori(datasetTransactions, parameter = list(support = 0.002, confidence =0.20, maxlen = 2))
+ruleLiftMax2 <- inspect(sort(transactionsRules_max2, by = "lift",decreasing = TRUE)[0:1])
+ruleSupportMax2 <- inspect(sort(transactionsRules_max2, by = "support",
+                                decreasing = TRUE)[0:1])
+```
+
+```{r}
+if(ruleLiftMax2["lift"] == ruleLiftMax3["lift"]){
+  cat('the rules for maximum length of 2 & 3 has the same lift(',
+      as.numeric(ruleLiftMax2["lift"]),'). \n')
+}else if (ruleLiftMax2["lift"] > ruleLiftMax3["lift"]){
+    cat('the rule for maximum length of 2 has the better lift(',
+      as.numeric(ruleLiftMax2["lift"]),'). \n')
+}else{
+    cat('the rule for maximum length of 3 has the better lift(',
+      as.numeric(ruleLiftMax3["lift"]),'). \n')
+  }
+```
+```{r}
+
+if(ruleSupportMax2["support"] == ruleSupportMax3["support"]){
+  cat('the rules for maximum length of 2 & 3 have the same support(',
+      as.numeric(ruleSupportMax2["support"]),'). \n')
+}else if (ruleSupportMax2["support"] > ruleSupportMax3["support"]){
+    cat('the rule for maximum length of 2 has the greater support(',
+      as.numeric(ruleSupportMax2["support"]),'). \n')
+}else{
+    cat('the rule for maximum length of 3 has the greater support(',
+      as.numeric(ruleSupportMax3["support"]),'). \n')
+  }
+```
+
+
+#ii) If you were a marketing manager, and could fund only one of these rules, which would it be, and why?
+
+```{r}
+rules_lift = inspect(sort(transactionsRules, by = "lift",decreasing = TRUE))
+rules_lift[,c("lhs","lhs","lift")]
+```
+
+```{r}
+rulesmax2Lift = inspect(sort(transactionsRules_max2, by = "lift",decreasing = TRUE))
+rulesmax2Lift[,c("lhs","lhs","lift")]
+```
+
